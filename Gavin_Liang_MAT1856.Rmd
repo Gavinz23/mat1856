@@ -1,0 +1,580 @@
+---
+title: "MAT1856/APM466 Assignment 1"
+author: 'Gavin Liang, Student #: 1010728492'
+date: "February, 2024"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r,warning=FALSE,message=FALSE}
+#stored the bond data in a separate excel sheet and then imported the data from the sheet instead of keying
+library(readxl)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+bonds=read_excel("data/bonds.xlsx")
+bonds$`MATURITY DATE`=as.Date(bonds$`MATURITY DATE`)
+bonds$WEEKDAY=as.Date(bonds$WEEKDAY)
+```
+
+\section*{Fundamental Questions - 25 points}
+
+1.                                      
+\hfill
+    (a)
+    
+    Bonds are issued to mitigate deficits in government budget and control the country's money supply, whereas printing out money means inflation and the reality that the central bank cannot really take charge of the money supply once the money is in the market, which can cause economic harms. [1]
+
+    (b)
+    
+    An example could be that the macroeconomic/long-term outlook is bad for the country, meaning that the investors do not believe in the market's future growth potential, making them more likely to invest in short-term securities.
+
+    (c)
+
+    Quantitative easing is a monetary policy that aims to purchase securities from the open market so that more money can be supplied to the market, thereby reducing interest rates and encouraging economic activities, and the US Fed employed this policy by lowering the federal funds rate for overnight borrowing, purchasing Treasury securities back, and establishing fund lending programs. [2]
+
+2.
+
+The 10 (11) bonds that I have selected are:
+
+CAN 2.25 Mar 24/CAN 1.5 Sep 24/CAN 1.25 Mar 25/CAN 0.5 Sep 25/CAN 0.25 Mar 26/CAN 1 Sep 26/CAN 1.25 Mar 27/CAN 2.75 Sep 27/CAN 3.5 Mar 28/CAN 3.25 Sep 28/CAN 4 Mar 29
+
+The reason why I selected those 10 (11) bonds is that there is an exact half-year increment in their maturity dates, which makes it possible for me to calculate the yield curve based on half-year intervals and makes calculations practical. If we choose some bond maturing on another date, we need to do extra calculations to get the interpolated values. In terms of the reason why I chose the bond maturing on Mar/01/2024 as my starting point, it is because in the year of 2028, there will be only three bonds maturing in that year on Mar/01, Jun/01, Sep/01, respectively. Since we want a yield curve based on half-year intervals, we need to select the bonds maturing on Mar/01 and Sep/01.
+
+3.
+
+The eigenvalues associated with the covariance matrix of those stochastic processes are informative of the directions of movement of return rate curves. Moreover, the eigenvalues imply how much variance can be explained by a given principal component and therefore its associated eigenvector. The larger the eigenvalue is, the greater the variability along the corresponding eigenvector. In the context of stochastic curves, higher eigenvalues imply points of the curve where the associated stochastic processes show higher variability. As for eigenvectors, they tell us the direction in which the data varies the most. Hence, in the context of stochastic curves, they can show us the patterns of variation of the respective stochastic processes on the curve. As a result, we can use eigenvalues and eigenvectors to compare different stochastic processes. [3][4]
+
+\section*{Empirical Questions - 75 points}
+
+4.
+\hfill
+    (a)
+
+```{r}
+#use filter to select the bonds of interest, which will be used for calculating the yield curves
+selected_bond=bonds %>% filter(year(ymd(bonds$`MATURITY DATE`))<=2029)
+selected_bond=selected_bond%>% filter(month(ymd(selected_bond$`MATURITY DATE`))==3 | month(ymd(selected_bond$`MATURITY DATE`))==9)
+```
+
+```{r}
+selected_bond$dirty_price=rep(0,nrow(selected_bond))
+#calculate the dirty price from the clean price
+for (i in unique(selected_bond$ISIN)){
+  #calculate the dirty prices based on the unique identifiers
+  for (j in unique(selected_bond$WEEKDAY)){
+    #for each bond, calculate the dirty price for each of the 10 weekdays
+    accrued=as.numeric(as.Date(j)-as.Date(ymd("2023-09-01")))/365*(selected_bond %>% filter(ISIN==i&WEEKDAY==j) %>% select(COUPON) %>% pull())*100
+    #according to the website, coupon payment is done on the 31st
+    dirty_price=selected_bond %>% filter(ISIN==i&WEEKDAY==j) %>% select(`CLOSE PRICE`) %>% pull()+accrued
+    selected_bond$dirty_price[selected_bond$ISIN==i&selected_bond$WEEKDAY==j]=dirty_price
+  }
+}
+```
+
+```{r}
+selected_bond$ytm=rep(0,nrow(selected_bond))
+selected_bond$maturity=rep(0,nrow(selected_bond))
+for (i in unique(selected_bond$ISIN)){
+  for (j in unique(selected_bond$WEEKDAY)){
+    #calculate the maturity time in years
+    maturity=as.numeric((selected_bond %>% filter(ISIN==i&WEEKDAY==j) %>% select(`MATURITY DATE`) %>% pull()-as.Date(j)))/365
+    
+    #calculate the yield according to the formula (numerator part)
+    yield_n=(selected_bond %>% filter(ISIN==i&WEEKDAY==j) %>% select(COUPON) %>% pull())*100+ (100-selected_bond %>% filter(ISIN==i&WEEKDAY==j) %>% select(dirty_price) %>% pull())/maturity
+    
+    #calculate the yield according to the formula (denominator part)
+    yield_d=(100+selected_bond %>% filter(ISIN==i&WEEKDAY==j) %>% select(dirty_price))/2
+    
+    yield=yield_n/yield_d*100
+    
+    selected_bond$maturity[selected_bond$ISIN==i&selected_bond$WEEKDAY==j]=maturity
+    selected_bond$ytm[selected_bond$ISIN==i&selected_bond$WEEKDAY==j]=as.numeric(yield)
+  }
+}
+```
+
+I used the yield to maturity formula according to Investopedia, which gives $YTM=\frac{C+\frac{FV-PV}{t}}{\frac{FV+PV}{2}}$.
+
+```{r}
+ggplot(selected_bond,aes(x=maturity,y=ytm,group=WEEKDAY))+
+  geom_line(aes(color=WEEKDAY))+
+  geom_point(aes(color=WEEKDAY))+
+  labs(x="Maturity (Years)",y="Yield to Maturity (%)",title="5-Year Yield to Maturity Curve",subtitle="For Weekdays between 2024-01-08 and 2024-01-19")
+```
+
+    (b)
+    
+ # a vector of 0's to store spot rates
+spot_rates=numeric(length(maturity_value))
+
+for (each maturity_value in [1,2,3,4,5]):{
+  cash_flows=[coupon,coupon,...,100+coupon]
+  #a number of cash flows to be discounted
+  
+  time_periods=[1,2,...,maturity_value]
+  # a number of time periods where payments are present
+  
+  present_value=dirty price of each bond
+  #prices looked up online
+  
+  #bootstrap part to calculate spot rates
+  for (each spot_rate_approximation in spot_rates_guess):{
+    discounted_cash_flows=[cf/(1+spot_rates_guess[j])**time_periods[j] for j, cf in enumerate(cash_flows)]
+    #to discount future cashflows into present value
+    
+    if (abs(present_value-discounted_cash_flows)<=0.0001){
+    #compare the different between the present value and price to see how accurate the spot rate guess is
+        
+        spot_rates[i]=each spot_rate_approximation
+        #if approximation is very good, we can use this rate.
+    }
+  }
+}
+
+
+
+```{r}
+#the function is inspired by the code provided by the TA and hints in the assignment
+
+bootstrap_yield_curve=function(bonds){
+  spot_rates=numeric(length(bonds))
+    #for each bond, there are 3 elements; first is the price, second is the coupon_rate; third is the maturity
+    
+    #sort bonds by maturity
+  sorted_bonds=bonds[order(sapply(bonds,"[[",3))]
+    
+  for (i in seq_along(sorted_bonds)){
+    future_value=100
+    bond=sorted_bonds[[i]]
+    price=bond[[1]]
+    coupon_rate=bond[[2]]
+    maturity=bond[[3]]
+    #since coupon is paid semi-annually
+    semi_coupon=coupon_rate/2
+    
+    if (i==1){
+      spot_rate=(future_value+semi_coupon)/price-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==2){
+      spot_rate=sqrt((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])))-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==3){
+      spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2))^(1/3)-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==4){
+      spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2-semi_coupon/(1+spot_rates[3])^3))^(1/4)-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==5){
+      spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2-semi_coupon/(1+spot_rates[3])^3-semi_coupon/(1+spot_rates[4])^4))^(1/5)-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==6){
+      spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2-semi_coupon/(1+spot_rates[3])^3-semi_coupon/(1+spot_rates[4])^4-semi_coupon/(1+spot_rates[5])^5))^(1/6)-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==7){
+      spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2-semi_coupon/(1+spot_rates[3])^3-semi_coupon/(1+spot_rates[4])^4-semi_coupon/(1+spot_rates[5])^5-semi_coupon/(1+spot_rates[6])^6))^(1/7)-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==8){
+      spot_rate=spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2-semi_coupon/(1+spot_rates[3])^3-semi_coupon/(1+spot_rates[4])^4-semi_coupon/(1+spot_rates[5])^5-semi_coupon/(1+spot_rates[6])^6-semi_coupon/(1+spot_rates[7])^7))^(1/8)-1
+      spot_rates[i]=spot_rate
+    }
+    else if (i==9){
+      spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2-semi_coupon/(1+spot_rates[3])^3-semi_coupon/(1+spot_rates[4])^4-semi_coupon/(1+spot_rates[5])^5-semi_coupon/(1+spot_rates[6])^6-semi_coupon/(1+spot_rates[7])^7-semi_coupon/(1+spot_rates[8])^8))^(1/9)-1
+      spot_rates[i]=spot_rate
+    }
+    else{
+      spot_rate=((semi_coupon+future_value)/(price-semi_coupon/(1+spot_rates[1])-semi_coupon/(1+spot_rates[2])^2-semi_coupon/(1+spot_rates[3])^3-semi_coupon/(1+spot_rates[4])^4-semi_coupon/(1+spot_rates[5])^5-semi_coupon/(1+spot_rates[6])^6-semi_coupon/(1+spot_rates[7])^7-semi_coupon/(1+spot_rates[8])^8-semi_coupon/(1+spot_rates[9])^9))^(1/10)-1
+      spot_rates[i]=spot_rate
+    }
+  }
+  return(spot_rates)
+}
+```
+
+```{r}
+#round the maturity to the nearest .5 or integer so that calculations are easier
+selected_bond$maturity_round=round(selected_bond$maturity,1)-0.1
+selected_bond$maturity_round[selected_bond$ISIN=="CA135087Q491"&selected_bond$WEEKDAY=="2024-01-08"]=4.5
+```
+
+```{r}
+bond_new=data.frame(Price=selected_bond$dirty_price,Coupon=selected_bond$COUPON*100,Maturity=selected_bond$maturity_round,Weekday=selected_bond$WEEKDAY,Yield=selected_bond$ytm)
+bond_new=bond_new %>% filter(Maturity!=0)
+```
+
+```{r}
+#split the data set by weekdays
+bond1=bond_new[bond_new$Weekday=="2024-01-08",]
+bond2=bond_new[bond_new$Weekday=="2024-01-09",]
+bond3=bond_new[bond_new$Weekday=="2024-01-10",]
+bond4=bond_new[bond_new$Weekday=="2024-01-11",]
+bond5=bond_new[bond_new$Weekday=="2024-01-12",]
+bond6=bond_new[bond_new$Weekday=="2024-01-15",]
+bond7=bond_new[bond_new$Weekday=="2024-01-16",]
+bond8=bond_new[bond_new$Weekday=="2024-01-17",]
+bond9=bond_new[bond_new$Weekday=="2024-01-18",]
+bond10=bond_new[bond_new$Weekday=="2024-01-19",]
+```
+
+```{r}
+row_to_vector1=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond1)) {
+  row_to_vector1[[i]]=c(unname(unlist(bond1[i,])))
+}
+row_to_vector2=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond2)) {
+  row_to_vector2[[i]]=c(unname(unlist(bond2[i,])))
+}
+
+row_to_vector3=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond3)) {
+  row_to_vector3[[i]]=c(unname(unlist(bond3[i,])))
+}
+
+row_to_vector4=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond4)) {
+  row_to_vector4[[i]]=c(unname(unlist(bond4[i,])))
+}
+
+row_to_vector5=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond5)) {
+  row_to_vector5[[i]]=c(unname(unlist(bond5[i,])))
+}
+
+row_to_vector6=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond6)) {
+  row_to_vector6[[i]]=c(unname(unlist(bond6[i,])))
+}
+
+row_to_vector7=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond7)) {
+  row_to_vector7[[i]]=c(unname(unlist(bond7[i,])))
+}
+
+row_to_vector8=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond8)) {
+  row_to_vector8[[i]]=c(unname(unlist(bond8[i,])))
+}
+
+row_to_vector9=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond9)) {
+  row_to_vector9[[i]]=c(unname(unlist(bond9[i,])))
+}
+
+row_to_vector10=list()
+#extract each row as a vector and the whole as a list
+for (i in 1:nrow(bond10)) {
+  row_to_vector10[[i]]=c(unname(unlist(bond10[i,])))
+}
+```
+
+```{r}
+spot_rate=c(bootstrap_yield_curve(row_to_vector1),bootstrap_yield_curve(row_to_vector2),bootstrap_yield_curve(row_to_vector3),bootstrap_yield_curve(row_to_vector4),bootstrap_yield_curve(row_to_vector5),bootstrap_yield_curve(row_to_vector6),bootstrap_yield_curve(row_to_vector7),bootstrap_yield_curve(row_to_vector8),bootstrap_yield_curve(row_to_vector9),bootstrap_yield_curve(row_to_vector10))
+#combine all spot rates
+bond_new$Spot=spot_rate*100
+```
+
+```{r}
+ggplot(bond_new,aes(x=Maturity,y=Spot,group=Weekday))+
+  geom_line(aes(color=Weekday))+
+  geom_point(aes(color=Weekday))+
+  labs(x="Maturity (Years)",y="Spot Rate (%)",title="5-Year Spot Curve",subtitle="For Weekdays between 2024-01-08 and 2024-01-19")
+```
+    (c)
+    
+ #We suppose we already have a vector of spot_rate for a given day from (b), where the i-th element is the spot rate for bonds with i years to maturity.
+spot_rates=c(s1,...,s5)
+
+ #We now define a vector of 0's so that the results can be stored.
+forward_rates=numeric(length(spot_rates))
+
+ #We then loop over the spot_rate vector so that each possible forward rate can be calculated; for example, if we have 5 spot rates for 5 different years of maturity, then we can compute 1-1, 1-2, ..., 1-5 forward rates.
+
+for (each spot rate in spot_rates):{
+  
+ #We now calculate the forward rate according to the formula. Since coupons are paid out semi-annually, we need to do semi-annual compounding.
+  forward_rate=((1+spot_rates[each])^(2*each)/(1+spot_rates[starting_point])^2)^(1/(2*(each-1)))-1
+  
+  for example, the forward rate for 1-2 years is:
+forward_rate=((1+s2)^(2*2)/(1+s1)^2)^(1/2)-1
+  
+  #We finally store the resulting forward rate in the defined vector, which we can then bind with our existing dataset.
+  forward_rates[i]=forward_rate
+}
+
+
+```{r}
+bond1$Spot=bootstrap_yield_curve(row_to_vector1)
+bond2$Spot=bootstrap_yield_curve(row_to_vector2)
+bond3$Spot=bootstrap_yield_curve(row_to_vector3)
+bond4$Spot=bootstrap_yield_curve(row_to_vector4)
+bond5$Spot=bootstrap_yield_curve(row_to_vector5)
+bond6$Spot=bootstrap_yield_curve(row_to_vector6)
+bond7$Spot=bootstrap_yield_curve(row_to_vector7)
+bond8$Spot=bootstrap_yield_curve(row_to_vector8)
+bond9$Spot=bootstrap_yield_curve(row_to_vector9)
+bond10$Spot=bootstrap_yield_curve(row_to_vector10)
+```
+
+```{r}
+bond11=bond1 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond21=bond2 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond31=bond3 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond41=bond4 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond51=bond5 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond61=bond6 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond71=bond7 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond81=bond8 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond91=bond9 %>% filter(Maturity%%1==0|Maturity=="4")
+
+bond101=bond10 %>% filter(Maturity%%1==0|Maturity=="4")
+
+```
+
+```{r}
+forward_rate1=numeric(nrow(bond11))
+for (i in 1:nrow(bond11)){
+  forward=((1+bond11[i,"Spot"])^(2*i)/(1+bond11[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate1[i]=forward
+}
+bond11$forward=forward_rate1
+
+forward_rate2=numeric(nrow(bond21))
+for (i in 1:nrow(bond21)){
+  forward=((1+bond21[i,"Spot"])^(2*i)/(1+bond21[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate2[i]=forward
+}
+bond21$forward=forward_rate2
+
+forward_rate3=numeric(nrow(bond31))
+for (i in 1:nrow(bond31)){
+  forward=((1+bond31[i,"Spot"])^(2*i)/(1+bond31[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate3[i]=forward
+}
+bond31$forward=forward_rate3
+
+forward_rate4=numeric(nrow(bond41))
+for (i in 1:nrow(bond41)){
+  forward=((1+bond41[i,"Spot"])^(2*i)/(1+bond41[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate4[i]=forward
+}
+bond41$forward=forward_rate4
+
+forward_rate5=numeric(nrow(bond51))
+for (i in 1:nrow(bond51)){
+  forward=((1+bond51[i,"Spot"])^(2*i)/(1+bond51[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate5[i]=forward
+}
+bond51$forward=forward_rate5
+
+forward_rate6=numeric(nrow(bond61))
+for (i in 1:nrow(bond61)){
+  forward=((1+bond61[i,"Spot"])^(2*i)/(1+bond61[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate6[i]=forward
+}
+bond61$forward=forward_rate6
+
+forward_rate7=numeric(nrow(bond71))
+for (i in 1:nrow(bond71)){
+  forward=((1+bond71[i,"Spot"])^(2*i)/(1+bond71[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate7[i]=forward
+}
+bond71$forward=forward_rate7
+
+forward_rate8=numeric(nrow(bond81))
+for (i in 1:nrow(bond81)){
+  forward=((1+bond81[i,"Spot"])^(2*i)/(1+bond81[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate8[i]=forward
+}
+bond81$forward=forward_rate8
+
+forward_rate9=numeric(nrow(bond91))
+for (i in 1:nrow(bond91)){
+  forward=((1+bond91[i,"Spot"])^(2*i)/(1+bond91[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate9[i]=forward
+}
+bond91$forward=forward_rate9
+
+forward_rate10=numeric(nrow(bond101))
+for (i in 1:nrow(bond101)){
+  forward=((1+bond101[i,"Spot"])^(2*i)/(1+bond101[1,"Spot"])^2)^(1/(2*(i-1)))-1
+  forward_rate10[i]=forward
+}
+bond101$forward=forward_rate10
+```
+
+```{r}
+bond_forward=rbind(bond11,bond21,bond31,bond41,bond51,bond61,bond71,bond81,bond91,bond101)
+names(bond_forward)[names(bond_forward)=="forward"]="Forward"
+bond_forward$Forward=bond_forward$Forward*100
+
+ggplot(bond_forward,aes(x=Maturity,y=Forward,group=Weekday))+
+  geom_line(aes(color=Weekday))+
+  geom_point(aes(color=Weekday))+
+  labs(x="Maturity (Years)",y="Forward Rate (%)",title="Forward Curve with Terms Ranging from 2-5 Years",subtitle="For Weekdays between 2024-01-08 and 2024-01-19")
+```
+
+5.
+
+```{r}
+cov_bond1=bond_forward %>% filter(Maturity==1)
+cov_bond2=bond_forward %>% filter(Maturity==2)
+cov_bond3=bond_forward %>% filter(Maturity==3)
+cov_bond4=bond_forward %>% filter(Maturity=='4')
+cov_bond5=bond_forward %>% filter(Maturity==5)
+```
+
+```{r,warning=FALSE}
+cov_value1=numeric(9)
+for (i in 1:(nrow(cov_bond1)-1)){
+  value=log(cov_bond1$Yield[i+1]/cov_bond1$Yield[i])
+  if (is.nan(value)){
+    cov_value1[i]=0
+  }else{
+    cov_value1[i]=value
+  }
+}
+
+cov_value2=numeric(9)
+for (i in 1:(nrow(cov_bond2)-1)){
+  value=log(cov_bond2$Yield[i+1]/cov_bond2$Yield[i])
+  if (is.nan(value)){
+    cov_value2[i]=0
+  }else{
+    cov_value2[i]=value
+  }
+}
+
+cov_value3=numeric(9)
+for (i in 1:(nrow(cov_bond3)-1)){
+  value=log(cov_bond3$Yield[i+1]/cov_bond3$Yield[i])
+  if (is.nan(value)){
+    cov_value3[i]=0
+  }else{
+    cov_value3[i]=value
+  }
+}
+
+cov_value4=numeric(9)
+for (i in 1:(nrow(cov_bond4)-1)){
+  value=log(cov_bond4$Yield[i+1]/cov_bond4$Yield[i])
+  if (is.nan(value)){
+    cov_value4[i]=0
+  }else{
+    cov_value4[i]=value
+  }
+}
+
+cov_value5=numeric(9)
+for (i in 1:(nrow(cov_bond5)-1)){
+  value=log(cov_bond5$Yield[i+1]/cov_bond5$Yield[i])
+  if (is.nan(value)){
+    cov_value5[i]=0
+  }else{
+    cov_value5[i]=value
+  }
+}
+```
+
+```{r}
+matrix_yield=matrix(cbind(cov_value1,cov_value2,cov_value3,cov_value4,cov_value5),nrow=9,ncol=5)
+```
+
+```{r}
+cov_matrix_yield=cov(matrix_yield)
+cov_matrix_yield
+```
+
+```{r}
+cov_value2_forward=numeric(9)
+for (i in 1:(nrow(cov_bond2)-1)){
+  value=log(cov_bond2$Forward[i+1]/cov_bond2$Forward[i])
+  cov_value2_forward[i]=value
+}
+
+cov_value3_forward=numeric(9)
+for (i in 1:(nrow(cov_bond3)-1)){
+  value=log(cov_bond3$Forward[i+1]/cov_bond3$Forward[i])
+  cov_value3_forward[i]=value
+}
+
+cov_value4_forward=numeric(9)
+for (i in 1:(nrow(cov_bond4)-1)){
+  value=log(cov_bond4$Forward[i+1]/cov_bond4$Forward[i])
+  cov_value4_forward[i]=value
+}
+
+cov_value5_forward=numeric(9)
+for (i in 1:(nrow(cov_bond5)-1)){
+  value=log(cov_bond5$Forward[i+1]/cov_bond5$Forward[i])
+  cov_value5_forward[i]=value
+}
+
+```
+
+```{r}
+matrix_forward=matrix(cbind(cov_value2_forward,cov_value3_forward,cov_value4_forward,cov_value5_forward),nrow=9,ncol=4)
+```
+
+```{r}
+cov_matrix_forward=cov(matrix_forward)
+cov_matrix_forward
+```
+
+6. 
+
+Below is the eigenvalues and eigenvectors for the yield returns.
+```{r}
+eigen(cov_matrix_yield)
+```
+Below is the eigenvalues and eigenvectors for the forward rates.
+```{r}
+eigen(cov_matrix_forward)
+```
+
+The first eigenvalue implies the magnitude of the variability along the first principal component and its associated with eigenvector implies the principal component direction, of which both eiganvalues are small.
+
+\section*{References and GitHub Link to Code}
+
+1. Investopedia: https://www.investopedia.com/terms/y/yieldtomaturity.asp#:~:text=Yield%20to%20maturity%20is%20the,and%20repays%20the%20original%20principal
+
+2. Investopedia: https://www.investopedia.com/terms/q/quantitative-easing.asp
+
+3. Sebastian Raschka https://sebastianraschka.com/Articles/2015_pca_in_3_steps.html
+
+4. OARC Stats https://stats.oarc.ucla.edu/spss/seminars/efa-spss/
+
+5. GitHub: https://github.com/Gavinz23/mat1856
+
+I was not able to minimize my plots. Except for the big plots, everything else should be within the limit of 3 pages.
